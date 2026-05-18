@@ -3,8 +3,10 @@ import EntryForm from './components/EntryForm'
 import DataTable from './components/DataTable'
 import PayChart from './components/PayChart'
 import ExportButton from './components/ExportButton'
+import { useJsonFile } from './hooks/useJsonFile'
 
 const STORAGE_KEY = 'payrate_entries'
+const FILE_API_SUPPORTED = 'showSaveFilePicker' in window
 
 export default function App() {
   const [entries, setEntries] = useState(() => {
@@ -17,10 +19,32 @@ export default function App() {
   })
   const [editingEntry, setEditingEntry] = useState(null)
   const [activeChart, setActiveChart] = useState('salary')
+  const [saveStatus, setSaveStatus] = useState(null) // 'saving' | 'saved' | null
+  const { saveToFile, pickSaveFile, openFile, hasFileHandle, getFileName } = useJsonFile()
 
+  // Always keep localStorage in sync
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
   }, [entries])
+
+  // Auto-save to file whenever entries change (if a file is open)
+  useEffect(() => {
+    if (!FILE_API_SUPPORTED || !hasFileHandle()) return
+    setSaveStatus('saving')
+    saveToFile(entries).then(() => {
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus(null), 2000)
+    })
+  }, [entries])
+
+  const handleOpenFile = async () => {
+    const data = await openFile()
+    if (data) setEntries(data)
+  }
+
+  const handleSaveAs = async () => {
+    await pickSaveFile(entries)
+  }
 
   const addEntry = (entry) => {
     setEntries((prev) =>
@@ -52,8 +76,33 @@ export default function App() {
             <h1 className="text-2xl font-bold tracking-tight">💰 Payrate Tracker</h1>
             <p className="text-indigo-200 text-sm mt-0.5">Track salary & hours by date</p>
           </div>
-          <ExportButton entries={entries} />
+          <div className="flex items-center gap-3 flex-wrap">
+            {FILE_API_SUPPORTED && (
+              <>
+                <button
+                  onClick={handleOpenFile}
+                  className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white text-sm font-medium px-3 py-2 rounded-lg transition"
+                >
+                  📂 Open JSON
+                </button>
+                <button
+                  onClick={handleSaveAs}
+                  className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white text-sm font-medium px-3 py-2 rounded-lg transition"
+                >
+                  💾 Save As…
+                </button>
+              </>
+            )}
+            <ExportButton entries={entries} />
+          </div>
         </div>
+        {(saveStatus || getFileName()) && (
+          <div className="max-w-5xl mx-auto px-4 pb-2 flex items-center gap-2 text-indigo-200 text-xs">
+            {getFileName() && <span>📄 {getFileName()}</span>}
+            {saveStatus === 'saving' && <span className="animate-pulse">⏳ Saving…</span>}
+            {saveStatus === 'saved' && <span>✅ Saved</span>}
+          </div>
+        )}
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
